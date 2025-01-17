@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime
 import os
 from concurrent.futures import ThreadPoolExecutor
+import atexit
 
 # Streamlit configuration
 st.set_page_config(page_title="Twitch Chat TTS Bot", page_icon="🤖")
@@ -29,12 +30,16 @@ class TwitchBot(twitchio.Client):
         super().__init__(token=token)
         self.trigger = trigger
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self._running = True
 
     async def event_ready(self):
         st.success(f"Bot is ready! Connected to Twitch as {self.nick}")
         await self.join_channels([twitch_channel])
 
     async def event_message(self, message):
+        if not self._running:
+            return
+            
         if message.content.startswith(self.trigger):
             # Extract the message content after the trigger
             tts_text = message.content[len(self.trigger):].strip()
@@ -96,14 +101,44 @@ class TwitchBot(twitchio.Client):
         except Exception as e:
             st.error(f"Error: {str(e)}")
 
+    async def close(self):
+        """Cleanup method to properly close the bot"""
+        self._running = False
+        self.executor.shutdown(wait=False)
+        await super().close()
+
 async def main():
     if not all([twitch_channel, twitch_oauth, elevenlabs_api_key]):
         st.warning("Please fill in all required fields in the sidebar.")
         return
     
     bot = TwitchBot(twitch_oauth, trigger_word)
-    await bot.connect()
+    
+    try:
+        await bot.connect()
+    except Exception as e:
+        st.error(f"Connection error: {str(e)}")
+    finally:
+        await bot.close()
+        await asyncio.sleep(0.1)  # Give time for cleanup
+
+# Create a session state to track the bot's running status
+if 'bot_running' not in st.session_state:
+    st.session_state.bot_running = False
+
+def cleanup():
+    """Function to clean up resources when the app is closing"""
+    if hasattr(st.session_state, 'bot') and st.session_state.bot is not None:
+        asyncio.run(st.session_state.bot.close())
+
+# Register the cleanup function
+atexit.register(cleanup)
 
 if __name__ == "__main__":
-    if st.button("Start Bot"):
+    if st.button("Start Bot", disabled=st.session_state.bot_running):
+        st.session_state.bot_running = True
         asyncio.run(main())
+    
+    if st.button("Stop Bot", disabled=not st.session_state.bot_running):
+        st.session_state.bot_running = False
+        cleanup()
