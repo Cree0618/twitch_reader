@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-import asyncio
 from twitchio.ext import commands
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
@@ -22,9 +21,9 @@ class Bot(commands.Bot):
     async def event_message(self, message):
         if message.author.name.lower() == 'gameplayer0618':
             print(f"Message from StreamElements received: {message.content}")
-            await self.text_to_speech(message.content)
+            self.text_to_speech(message.content)
 
-    async def text_to_speech(self, text):
+    def text_to_speech(self, text):
         try:
             audio_generator = client.text_to_speech.convert(
                 voice_id="JBFqnCBsd6RMkjVDRZzb",
@@ -39,15 +38,16 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"Error generating audio: {e}")
 
-def run_bot():
+def start_bot():
     bot = Bot()
-    asyncio.run(bot.start())  # Use asyncio.run to start the bot
+    bot.run()  # This will block the Streamlit app; use carefully
 
 # Streamlit UI
 st.title("Twitch Bot with Text-to-Speech")
 
 if st.button("Start Bot"):
-    # Start the bot
-    run_bot()  # This will block the Streamlit app; use carefully
+    start_bot()  # This will block the Streamlit app until the bot is stopped
     st.success("Bot started! Check console for messages.")
 
+if st.button("Stop Bot"):
+    st.warning("Stopping the bot is not implemented in this example.")
