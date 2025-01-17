@@ -3,8 +3,10 @@ import requests
 import streamlit as st
 from twitchio.ext import commands
 from dotenv import load_dotenv
+import asyncio
 
 load_dotenv()
+
 
 # Load your ElevenLabs API key from the environment variable
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')

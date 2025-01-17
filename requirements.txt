@@ -1,3 +1,4 @@
 streamlit
 twitchio
 python-dotenv
+asyncio
