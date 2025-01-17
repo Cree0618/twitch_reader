@@ -1,76 +1,62 @@
 import os
-import requests
-import asyncio
 import threading
 import streamlit as st
 from twitchio.ext import commands
 from dotenv import load_dotenv
-
+from elevenlabs import ElevenLabs
+import asyncio
+# Load environment variables
 load_dotenv()
-
-# Load your ElevenLabs API key from the environment variable
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+
+client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
 class Bot(commands.Bot):
     def __init__(self):
-        super().__init__(token='c95ap3chzt6x3lnc0gc5r691hgegof', prefix='!', initial_channels=['sutsuno'])
-        self.messages = []
+        super().__init__(token='llfzk70gvunu5z5iwwfq5bakcnc04s', prefix='!', initial_channels=['gameplayer0618'])
 
     async def event_ready(self):
         print(f'Logged in as | {self.nick}')
 
     async def event_message(self, message):
-        # Ignore messages from the bot itself
-        if message.author.name.lower() == self.nick.lower():
-            return
-
-        # Check if the message is from StreamElements
         if message.author.name.lower() == 'gameplayer0618':
-            self.messages.append(message.content)
-            asyncio.create_task(self.text_to_speech(message.content))  # Run TTS task asynchronously
+            print(f"Message from StreamElements received: {message.content}")
+            await self.text_to_speech(message.content)
 
     async def text_to_speech(self, text):
-        url = "https://api.elevenlabs.io/v1/text-to-speech/generate"
-        headers = {
-            'Authorization': f'Bearer {ELEVENLABS_API_KEY}',
-            'Content-Type': 'application/json'
-        }
-        data = {
-            "text": text,
-            "voice": "9BWtsMINqrJLrRacOk9x"  # Specify the voice you want to use
-        }
-
-        response = requests.post(url, headers=headers, json=data)
-
-        if response.status_code == 200:
-            audio_content = response.content
+        try:
+            audio_generator = client.text_to_speech.convert(
+                voice_id="JBFqnCBsd6RMkjVDRZzb",
+                output_format="mp3_44100_128",
+                text=text,
+                model_id="eleven_multilingual_v2",
+            )
             with open('output.mp3', 'wb') as audio_file:
-                audio_file.write(audio_content)
+                for chunk in audio_generator:
+                    audio_file.write(chunk)
             print("Audio generated successfully.")
-        else:
-            print(f"Error: {response.status_code} - {response.text}")
+            return 'output.mp3'  # Return the path of the generated file
+        except Exception as e:
+            print(f"Error generating audio: {e}")
+            return None
 
 def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     bot = Bot()
-    loop.run_until_complete(bot.run())
+    bot.run()
 
 # Streamlit UI
-st.title("Twitch Chat Reader")
-st.write("Listening for messages from StreamElements...")
+st.title("Twitch Bot with Text-to-Speech")
 
-if 'bot_thread' not in st.session_state:
-    st.session_state.bot_thread = None
+bot = Bot()  # Create an instance of Bot
 
 if st.button("Start Bot"):
-    if st.session_state.bot_thread is None or not st.session_state.bot_thread.is_alive():
-        # Start the bot in a separate thread
-        st.session_state.bot_thread = threading.Thread(target=run_bot, daemon=True)
-        st.session_state.bot_thread.start()
-        st.success("Bot has started!")
-    else:
-        st.warning("Bot is already running!")
+    # Start the bot in a separate thread
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.success("Bot started!")
 
-st.write("Messages:")
-# Messages from the bot can be displayed using session state or Streamlit's experimental features
+if st.button("Generate TTS"):
+    text = st.text_input("Enter text for TTS:")
+    if text:
+        audio_file_path = asyncio.run(bot.text_to_speech(text))  # Call the TTS function asynchronously
+        if audio_file_path:
+            st.audio(audio_file_path)  # Play the generated audio file
