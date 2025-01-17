@@ -1,61 +1,67 @@
 import os
 import requests
+import threading
 from twitchio.ext import commands
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
-from threading import Lock
+import streamlit as st
 
 # Load environment variables
 load_dotenv()
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-TWITCH_ACCESS_TOKEN = os.getenv('TWITCH_ACCESS_TOKEN')
-# Initialize ElevenLabs client with the API key
+
+# Initialize ElevenLabs client
 client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
-# Create a lock for thread-safe access to shared resources
-audio_generation_lock = Lock()
-
+# Function to initialize and run the bot
 class Bot(commands.Bot):
-
     def __init__(self):
-        super().__init__(token=TWITCH_ACCESS_TOKEN, prefix='!', initial_channels=['gameplayer0618'])
+        super().__init__(token='llfzk70gvunu5z5iwwfq5bakcnc04s', prefix='!', initial_channels=['gameplayer0618'])
 
     async def event_ready(self):
-        print(f'Logged in as | {self.nick}')
+        st.info(f"Logged in as: {self.nick}")
+        print(f"Logged in as | {self.nick}")
 
     async def event_message(self, message):
         # Ignore messages from the bot itself
         if message.author.name.lower() == self.nick.lower():
             return
-        
-        # Check if the message is from StreamElements (replace 'gameplayer0618' with the correct name)
+
+        # Check if the message is from the target user
         if message.author.name.lower() == 'gameplayer0618':
-            print(f"Message from StreamElements received: {message.content}")
-            
-            # Delegate text-to-speech generation to a separate thread
-            await self.loop.run_in_executor(None, self.text_to_speech, message.content)
+            st.write(f"Received message: {message.content}")
+            print(f"Message from {message.author.name}: {message.content}")
+            await self.text_to_speech(message.content)
 
-    def text_to_speech(self, text):
-        """
-        Converts text to speech using ElevenLabs API in a thread-safe manner.
-        """
-        with audio_generation_lock:  # Acquire lock for thread safety
-            try:
-                # Generate audio using ElevenLabs API
-                audio_generator = client.text_to_speech.convert(
-                    voice_id="JBFqnCBsd6RMkjVDRZzb",
-                    output_format="mp3_44100_128",
-                    text=text,
-                    model_id="eleven_multilingual_v2",
-                )
-                # Save audio to a file
-                with open('output.mp3', 'wb') as audio_file:
-                    for chunk in audio_generator:
-                        audio_file.write(chunk)
-                print("Audio generated successfully.")
-            except Exception as e:
-                print(f"Error generating audio: {e}")
+    async def text_to_speech(self, text):
+        try:
+            # Generate audio using ElevenLabs API
+            audio_generator = client.text_to_speech.convert(
+                voice_id="JBFqnCBsd6RMkjVDRZzb",
+                output_format="mp3_44100_128",
+                text=text,
+                model_id="eleven_multilingual_v2",
+            )
+            with open('output.mp3', 'wb') as audio_file:
+                for chunk in audio_generator:
+                    audio_file.write(chunk)
+            st.success("Audio generated successfully.")
+            print("Audio generated successfully.")
+        except Exception as e:
+            st.error(f"Error generating audio: {e}")
+            print(f"Error generating audio: {e}")
 
-if __name__ == "__main__":
+def run_bot_in_thread():
+    """
+    Run the bot in a separate thread to avoid blocking Streamlit's main execution.
+    """
     bot = Bot()
     bot.run()
+
+# Streamlit UI
+st.title("Twitch Bot with Text-to-Speech")
+if st.button("Start Bot"):
+    st.write("Starting Twitch bot...")
+    bot_thread = threading.Thread(target=run_bot_in_thread, daemon=True)
+    bot_thread.start()
+    st.success("Bot is running in the background!")
