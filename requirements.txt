@@ -3,3 +3,4 @@ twitchio
 python-dotenv
 asyncio
 elevenlabs
+nest-asyncio
