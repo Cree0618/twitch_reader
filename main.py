@@ -1,12 +1,10 @@
 import os
 import requests
-import streamlit as st
+import asyncio
 from twitchio.ext import commands
 from dotenv import load_dotenv
-import asyncio
 
 load_dotenv()
-
 
 # Load your ElevenLabs API key from the environment variable
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
@@ -14,7 +12,7 @@ ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 class Bot(commands.Bot):
 
     def __init__(self):
-        super().__init__(token='your_twitch_token', prefix='!', initial_channels=['your_channel_name'])
+        super().__init__(token='c95ap3chzt6x3lnc0gc5r691hgegof', prefix='!', initial_channels=['sutsuno'])
         self.messages = []
 
     async def event_ready(self):
@@ -28,7 +26,6 @@ class Bot(commands.Bot):
         # Check if the message is from StreamElements
         if message.author.name.lower() == 'streamelements':
             self.messages.append(message.content)
-            st.session_state.messages.append(message.content)
             await self.text_to_speech(message.content)
 
     async def text_to_speech(self, text):
@@ -52,21 +49,7 @@ class Bot(commands.Bot):
         else:
             print(f"Error: {response.status_code} - {response.text}")
 
-# Initialize session state for messages
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-
-def run_bot():
+# Main function to run the bot
+if __name__ == "__main__":
     bot = Bot()
-    bot.run()
-
-# Streamlit UI
-st.title("Twitch Chat Reader")
-st.write("Listening for messages from StreamElements...")
-
-if st.button("Start Bot"):
-    run_bot()
-
-st.write("Messages:")
-for msg in st.session_state.messages:
-    st.write(msg)
+    asyncio.run(bot.start())
