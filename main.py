@@ -1,53 +1,109 @@
-import os
 import streamlit as st
-from twitchio.ext import commands
-from dotenv import load_dotenv
-from elevenlabs import ElevenLabs
+import twitchio
+import requests
+import asyncio
+from datetime import datetime
+import os
+from concurrent.futures import ThreadPoolExecutor
 
-# Load environment variables
-load_dotenv()
-ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-TWITCH_TOKEN = os.getenv('TWITCH_TOKEN')  # Ensure this is set in your .env file
+# Streamlit configuration
+st.set_page_config(page_title="Twitch Chat TTS Bot", page_icon="🤖")
 
-client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+# Streamlit UI elements
+st.title("Twitch Chat to Speech Bot")
 
-class Bot(commands.Bot):
-    def __init__(self):
-        super().__init__(token=TWITCH_TOKEN, prefix='!', initial_channels=['gameplayer0618'])
+# Sidebar for configuration
+with st.sidebar:
+    twitch_channel = st.text_input("Twitch Channel Name", "")
+    twitch_oauth = st.text_input("Twitch OAuth Token", type="password")
+    elevenlabs_api_key = st.text_input("ElevenLabs API Key", type="password")
+    voice_id = st.text_input("ElevenLabs Voice ID", "21m00Tcm4TlvDq8ikWAM")
+    trigger_word = st.text_input("Trigger Word (e.g., !tts)", "!tts")
+
+# Main chat display area
+chat_container = st.empty()
+messages = []
+
+class TwitchBot(twitchio.Client):
+    def __init__(self, token: str, trigger: str):
+        super().__init__(token=token)
+        self.trigger = trigger
+        self.executor = ThreadPoolExecutor(max_workers=1)
 
     async def event_ready(self):
-        print(f'Logged in as | {self.nick}')
+        st.success(f"Bot is ready! Connected to Twitch as {self.nick}")
+        await self.join_channels([twitch_channel])
 
     async def event_message(self, message):
-        if message.author.name.lower() == 'gameplayer0618':
-            print(f"Message from StreamElements received: {message.content}")
-            self.text_to_speech(message.content)
+        if message.content.startswith(self.trigger):
+            # Extract the message content after the trigger
+            tts_text = message.content[len(self.trigger):].strip()
+            
+            if tts_text:
+                # Add message to display
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                messages.append(f"{timestamp} - {message.author.name}: {tts_text}")
+                
+                # Keep only last 10 messages
+                if len(messages) > 10:
+                    messages.pop(0)
+                
+                # Update chat display
+                chat_display = "\n".join(messages)
+                chat_container.text_area("Recent TTS Messages", chat_display, height=200)
+                
+                # Convert to speech using ElevenLabs
+                self.executor.submit(
+                    self.generate_speech,
+                    tts_text
+                )
 
-    def text_to_speech(self, text):
+    def generate_speech(self, text):
         try:
-            audio_generator = client.text_to_speech.convert(
-                voice_id="JBFqnCBsd6RMkjVDRZzb",
-                output_format="mp3_44100_128",
-                text=text,
-                model_id="eleven_multilingual_v2",
-            )
-            with open('output.mp3', 'wb') as audio_file:
-                for chunk in audio_generator:
-                    audio_file.write(chunk)
-            print("Audio generated successfully.")
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            
+            headers = {
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": elevenlabs_api_key
+            }
+
+            data = {
+                "text": text,
+                "model_id": "eleven_monolingual_v1",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.5
+                }
+            }
+
+            response = requests.post(url, json=data, headers=headers)
+            
+            if response.status_code == 200:
+                # Save audio to temp file
+                temp_file = "temp_audio.mp3"
+                with open(temp_file, "wb") as f:
+                    f.write(response.content)
+                
+                # Play audio using streamlit
+                st.audio(temp_file)
+                
+                # Clean up temp file
+                os.remove(temp_file)
+            else:
+                st.error(f"Error generating speech: {response.status_code}")
+
         except Exception as e:
-            print(f"Error generating audio: {e}")
+            st.error(f"Error: {str(e)}")
 
-def start_bot():
-    bot = Bot()
-    bot.run()  # This will block the Streamlit app; use carefully
+async def main():
+    if not all([twitch_channel, twitch_oauth, elevenlabs_api_key]):
+        st.warning("Please fill in all required fields in the sidebar.")
+        return
+    
+    bot = TwitchBot(twitch_oauth, trigger_word)
+    await bot.connect()
 
-# Streamlit UI
-st.title("Twitch Bot with Text-to-Speech")
-
-if st.button("Start Bot"):
-    start_bot()  # This will block the Streamlit app until the bot is stopped
-    st.success("Bot started! Check console for messages.")
-
-if st.button("Stop Bot"):
-    st.warning("Stopping the bot is not implemented in this example.")
+if __name__ == "__main__":
+    if st.button("Start Bot"):
+        asyncio.run(main())
