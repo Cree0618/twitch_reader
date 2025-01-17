@@ -37,7 +37,7 @@ class Bot(commands.Bot):
         }
         data = {
             "text": text,
-            "voice": "your_voice_choice"  # Specify the voice you want to use
+            "voice": "9BWtsMINqrJLrRacOk9x"  # Specify the voice you want to use
         }
 
         response = requests.post(url, headers=headers, json=data)
