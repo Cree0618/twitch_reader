@@ -36,10 +36,15 @@ class TwitchBot(twitchio.Client):
         st.success(f"Bot is ready! Connected to Twitch as {self.nick}")
         await self.join_channels([twitch_channel])
 
-    async def event_message(self, message):
+    async def event_message(self, message: twitchio.Message):
+        # Skip if bot is not running
         if not self._running:
             return
             
+        # Skip messages from the bot itself
+        if message.echo:
+            return
+
         if message.content.startswith(self.trigger):
             # Extract the message content after the trigger
             tts_text = message.content[len(self.trigger):].strip()
@@ -107,20 +112,20 @@ class TwitchBot(twitchio.Client):
         self.executor.shutdown(wait=False)
         await super().close()
 
-async def main():
+def run_bot():
     if not all([twitch_channel, twitch_oauth, elevenlabs_api_key]):
         st.warning("Please fill in all required fields in the sidebar.")
         return
-    
-    bot = TwitchBot(twitch_oauth, trigger_word)
-    
+
     try:
-        await bot.connect()
+        bot = TwitchBot(twitch_oauth, trigger_word)
+        st.session_state.bot = bot
+        bot.run()
     except Exception as e:
-        st.error(f"Connection error: {str(e)}")
+        st.error(f"Bot error: {str(e)}")
     finally:
-        await bot.close()
-        await asyncio.sleep(0.1)  # Give time for cleanup
+        if hasattr(st.session_state, 'bot'):
+            asyncio.run(st.session_state.bot.close())
 
 # Create a session state to track the bot's running status
 if 'bot_running' not in st.session_state:
@@ -137,8 +142,9 @@ atexit.register(cleanup)
 if __name__ == "__main__":
     if st.button("Start Bot", disabled=st.session_state.bot_running):
         st.session_state.bot_running = True
-        asyncio.run(main())
+        run_bot()
     
     if st.button("Stop Bot", disabled=not st.session_state.bot_running):
         st.session_state.bot_running = False
         cleanup()
+        st.experimental_rerun()
