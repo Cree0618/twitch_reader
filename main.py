@@ -21,7 +21,7 @@ class Bot(commands.Bot):
 
     async def event_message(self, message):
         if message.author.name.lower() == 'gameplayer0618':
-            print(f"Message from StreamElements received: {message.content}")
+            os.write(f"Message from StreamElements received: {message.content}")
             await self.text_to_speech(message.content)
 
     async def text_to_speech(self, text):
@@ -36,9 +36,11 @@ class Bot(commands.Bot):
                 for chunk in audio_generator:
                     audio_file.write(chunk)
             print("Audio generated successfully.")
+            os.write("Audio generated successfully.")
             return 'output.mp3'  # Return the path of the generated file
         except Exception as e:
             print(f"Error generating audio: {e}")
+            os.write(f"Error generating audio: {e}")
             return None
 
 def run_bot():
@@ -57,6 +59,7 @@ if st.button("Start Bot"):
     st.success("Bot started!")
 
 if st.button("Generate TTS"):
+    bot = Bot()
     text = st.text_input("Enter text for TTS:")
     if text:
         audio_file_path = asyncio.run(bot.text_to_speech(text))  # Call the TTS function asynchronously
