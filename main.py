@@ -1,19 +1,16 @@
 import streamlit as st
-import twitchio
+from twitchio.ext import commands
 import requests
 import asyncio
-from datetime import datetime
-import os
 from concurrent.futures import ThreadPoolExecutor
+import os
 import atexit
 
 # Streamlit configuration
-st.set_page_config(page_title="Twitch Chat TTS Bot", page_icon="🤖")
+st.set_page_config(page_title="Twitch TTS Bot", page_icon="🤖")
+st.title("Twitch TTS Bot")
 
-# Streamlit UI elements
-st.title("Twitch Chat to Speech Bot")
-
-# Sidebar for configuration
+# Configuration inputs
 with st.sidebar:
     twitch_channel = st.text_input("Twitch Channel Name", "")
     twitch_oauth = st.text_input("Twitch OAuth Token", type="password")
@@ -21,52 +18,27 @@ with st.sidebar:
     voice_id = st.text_input("ElevenLabs Voice ID", "21m00Tcm4TlvDq8ikWAM")
     trigger_word = st.text_input("Trigger Word (e.g., !tts)", "!tts")
 
-# Main chat display area
-chat_container = st.empty()
-messages = []
-
-class TwitchBot(twitchio.Client):
-    def __init__(self, token: str, trigger: str):
-        super().__init__(token=token)
-        self.trigger = trigger
+class Bot(commands.Bot):
+    def __init__(self):
+        super().__init__(
+            token=twitch_oauth,
+            prefix='!',
+            initial_channels=[twitch_channel]
+        )
         self.executor = ThreadPoolExecutor(max_workers=1)
         self._running = True
 
     async def event_ready(self):
-        st.success(f"Bot is ready! Connected to Twitch as {self.nick}")
-        await self.join_channels([twitch_channel])
+        st.success(f'Bot is running in channel: {twitch_channel}')
 
-    async def event_message(self, message: twitchio.Message):
-        # Skip if bot is not running
-        if not self._running:
-            return
-            
-        # Skip messages from the bot itself
-        if message.echo:
+    async def event_message(self, ctx):
+        if not self._running or ctx.echo:
             return
 
-        if message.content.startswith(self.trigger):
-            # Extract the message content after the trigger
-            tts_text = message.content[len(self.trigger):].strip()
-            
+        if ctx.content.startswith(trigger_word):
+            tts_text = ctx.content[len(trigger_word):].strip()
             if tts_text:
-                # Add message to display
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                messages.append(f"{timestamp} - {message.author.name}: {tts_text}")
-                
-                # Keep only last 10 messages
-                if len(messages) > 10:
-                    messages.pop(0)
-                
-                # Update chat display
-                chat_display = "\n".join(messages)
-                chat_container.text_area("Recent TTS Messages", chat_display, height=200)
-                
-                # Convert to speech using ElevenLabs
-                self.executor.submit(
-                    self.generate_speech,
-                    tts_text
-                )
+                self.executor.submit(self.generate_speech, tts_text)
 
     def generate_speech(self, text):
         try:
@@ -90,24 +62,18 @@ class TwitchBot(twitchio.Client):
             response = requests.post(url, json=data, headers=headers)
             
             if response.status_code == 200:
-                # Save audio to temp file
                 temp_file = "temp_audio.mp3"
                 with open(temp_file, "wb") as f:
                     f.write(response.content)
-                
-                # Play audio using streamlit
                 st.audio(temp_file)
-                
-                # Clean up temp file
                 os.remove(temp_file)
             else:
-                st.error(f"Error generating speech: {response.status_code}")
+                st.error("TTS API Error")
 
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error("Error generating speech")
 
     async def close(self):
-        """Cleanup method to properly close the bot"""
         self._running = False
         self.executor.shutdown(wait=False)
         await super().close()
@@ -118,7 +84,7 @@ def run_bot():
         return
 
     try:
-        bot = TwitchBot(twitch_oauth, trigger_word)
+        bot = Bot()
         st.session_state.bot = bot
         bot.run()
     except Exception as e:
@@ -127,16 +93,13 @@ def run_bot():
         if hasattr(st.session_state, 'bot'):
             asyncio.run(st.session_state.bot.close())
 
-# Create a session state to track the bot's running status
 if 'bot_running' not in st.session_state:
     st.session_state.bot_running = False
 
 def cleanup():
-    """Function to clean up resources when the app is closing"""
     if hasattr(st.session_state, 'bot') and st.session_state.bot is not None:
         asyncio.run(st.session_state.bot.close())
 
-# Register the cleanup function
 atexit.register(cleanup)
 
 if __name__ == "__main__":
