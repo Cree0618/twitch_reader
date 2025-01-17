@@ -1,173 +1,61 @@
-import streamlit as st
-from twitchio.ext import commands
-import requests
-import asyncio
-import nest_asyncio
-from concurrent.futures import ThreadPoolExecutor
 import os
-import atexit
-from queue import Queue
-import threading
+import requests
+from twitchio.ext import commands
+from dotenv import load_dotenv
+from elevenlabs import ElevenLabs
+from threading import Lock
 
-# Enable nested event loops
-nest_asyncio.apply()
+# Load environment variables
+load_dotenv()
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+TWITCH_ACCESS_TOKEN = os.getenv('TWITCH_ACCESS_TOKEN')
+# Initialize ElevenLabs client with the API key
+client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
-# Create a queue for audio files
-if 'audio_queue' not in st.session_state:
-    st.session_state.audio_queue = Queue()
-
-# Streamlit configuration
-st.set_page_config(page_title="Twitch TTS Bot", page_icon="🤖")
-st.title("Twitch TTS Bot")
-
-# Configuration inputs
-with st.sidebar:
-    twitch_channel = st.text_input("Twitch Channel Name", "")
-    access_token = st.text_input("Twitch Access Token", type="password", help="Enter your Twitch access token without the 'oauth:' prefix")
-    elevenlabs_api_key = st.text_input("ElevenLabs API Key", type="password")
-    voice_id = st.text_input("ElevenLabs Voice ID", "21m00Tcm4TlvDq8ikWAM")
-    trigger_word = st.text_input("Trigger Word (e.g., !tts)", "!tts")
-
-# Status indicator placeholder
-status_placeholder = st.empty()
-
-# Audio player placeholder
-audio_placeholder = st.empty()
+# Create a lock for thread-safe access to shared resources
+audio_generation_lock = Lock()
 
 class Bot(commands.Bot):
+
     def __init__(self):
-        # Add 'oauth:' prefix to the access token if it's not already there
-        token = f"oauth:{access_token}" if not access_token.startswith("oauth:") else access_token
-        
-        super().__init__(
-            token=token,
-            prefix='!',
-            initial_channels=[twitch_channel]
-        )
-        self.executor = ThreadPoolExecutor(max_workers=1)
-        self._running = True
+        super().__init__(token=TWITCH_ACCESS_TOKEN, prefix='!', initial_channels=['gameplayer0618'])
 
     async def event_ready(self):
-        print(f'Bot is running in channel: {twitch_channel}')
+        print(f'Logged in as | {self.nick}')
 
-    async def event_message(self, ctx):
-        if not self._running or ctx.echo:
+    async def event_message(self, message):
+        # Ignore messages from the bot itself
+        if message.author.name.lower() == self.nick.lower():
             return
-
-        if ctx.content.startswith(trigger_word):
-            tts_text = ctx.content[len(trigger_word):].strip()
-            if tts_text:
-                self.executor.submit(self.generate_speech, tts_text)
-
-from streamlit.runtime.scriptrunner import add_script_run_ctx
-
-def generate_speech(self, text):
-    add_script_run_ctx(threading.current_thread())  
-    try:
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": elevenlabs_api_key
-        }
+        # Check if the message is from StreamElements (replace 'gameplayer0618' with the correct name)
+        if message.author.name.lower() == 'gameplayer0618':
+            print(f"Message from StreamElements received: {message.content}")
+            
+            # Delegate text-to-speech generation to a separate thread
+            await self.loop.run_in_executor(None, self.text_to_speech, message.content)
 
-        data = {
-            "text": text,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.5
-            }
-        }
+    def text_to_speech(self, text):
+        """
+        Converts text to speech using ElevenLabs API in a thread-safe manner.
+        """
+        with audio_generation_lock:  # Acquire lock for thread safety
+            try:
+                # Generate audio using ElevenLabs API
+                audio_generator = client.text_to_speech.convert(
+                    voice_id="JBFqnCBsd6RMkjVDRZzb",
+                    output_format="mp3_44100_128",
+                    text=text,
+                    model_id="eleven_multilingual_v2",
+                )
+                # Save audio to a file
+                with open('output.mp3', 'wb') as audio_file:
+                    for chunk in audio_generator:
+                        audio_file.write(chunk)
+                print("Audio generated successfully.")
+            except Exception as e:
+                print(f"Error generating audio: {e}")
 
-        response = requests.post(url, json=data, headers=headers)
-        
-        if response.status_code == 200:
-            st.session_state.audio_queue.put(response.content)
-        else:
-            print("TTS API Error")
-
-    except Exception as e:
-        print(f"Error generating speech: {str(e)}")
-
-
-    async def close(self):
-        self._running = False
-        self.executor.shutdown(wait=False)
-        await super().close()
-
-def init_asyncio_patch():
-    """Create new event loop and set it as the default for the thread"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
-
-def run_bot():
-    if not all([twitch_channel, access_token, elevenlabs_api_key]):
-        st.warning("Please fill in all required fields in the sidebar.")
-        return
-
-    try:
-        # Initialize asyncio loop
-        loop = init_asyncio_patch()
-        
-        # Create and run bot
-        bot = Bot()
-        st.session_state.bot = bot
-        
-        # Run the bot using the event loop
-        loop.run_until_complete(bot.start())
-    except Exception as e:
-        print(f"Bot error: {str(e)}")
-    finally:
-        if hasattr(st.session_state, 'bot'):
-            loop.run_until_complete(st.session_state.bot.close())
-            loop.close()
-
-def cleanup():
-    if hasattr(st.session_state, 'bot') and st.session_state.bot is not None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(st.session_state.bot.close())
-        loop.close()
-
-# Register the cleanup function
-atexit.register(cleanup)
-
-# Bot control
-if 'bot_running' not in st.session_state:
-    st.session_state.bot_running = False
-
-if st.button("Start Bot", disabled=st.session_state.bot_running):
-    st.session_state.bot_running = True
-    # Start bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    status_placeholder.success("Bot is running")
-
-if st.button("Stop Bot", disabled=not st.session_state.bot_running):
-    st.session_state.bot_running = False
-    cleanup()
-    status_placeholder.warning("Bot stopped")
-    st.experimental_rerun()
-
-# Audio player loop
-if st.session_state.bot_running:
-    try:
-        # Check for new audio in the queue
-        if not st.session_state.audio_queue.empty():
-            audio_data = st.session_state.audio_queue.get()
-            # Save temporary file
-            temp_file = "temp_audio.mp3"
-            with open(temp_file, "wb") as f:
-                f.write(audio_data)
-            # Play audio
-            audio_placeholder.audio(temp_file)
-            # Clean up
-            os.remove(temp_file)
-    except Exception as e:
-        print(f"Error playing audio: {str(e)}")
+if __name__ == "__main__":
+    bot = Bot()
+    bot.run()
