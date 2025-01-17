@@ -25,7 +25,7 @@ class Bot(commands.Bot):
             return
 
         # Check if the message is from StreamElements
-        if message.author.name.lower() == 'streamelements':
+        if message.author.name.lower() == 'gameplayer0618':
             self.messages.append(message.content)
             asyncio.create_task(self.text_to_speech(message.content))  # Run TTS task asynchronously
 
