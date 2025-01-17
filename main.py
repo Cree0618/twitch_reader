@@ -1,10 +1,11 @@
 import os
 import threading
 import streamlit as st
+import asyncio
 from twitchio.ext import commands
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
-import asyncio
+
 # Load environment variables
 load_dotenv()
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
@@ -41,13 +42,14 @@ class Bot(commands.Bot):
             return None
 
 def run_bot():
+    # Create a new event loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     bot = Bot()
-    bot.run()
+    loop.run_until_complete(bot.start())  # Use start() instead of run()
 
 # Streamlit UI
 st.title("Twitch Bot with Text-to-Speech")
-
-bot = Bot()  # Create an instance of Bot
 
 if st.button("Start Bot"):
     # Start the bot in a separate thread
