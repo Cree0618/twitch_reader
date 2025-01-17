@@ -6,9 +6,15 @@ import nest_asyncio
 from concurrent.futures import ThreadPoolExecutor
 import os
 import atexit
+from queue import Queue
+import threading
 
 # Enable nested event loops
 nest_asyncio.apply()
+
+# Create a queue for audio files
+if 'audio_queue' not in st.session_state:
+    st.session_state.audio_queue = Queue()
 
 # Streamlit configuration
 st.set_page_config(page_title="Twitch TTS Bot", page_icon="🤖")
@@ -21,6 +27,12 @@ with st.sidebar:
     elevenlabs_api_key = st.text_input("ElevenLabs API Key", type="password")
     voice_id = st.text_input("ElevenLabs Voice ID", "21m00Tcm4TlvDq8ikWAM")
     trigger_word = st.text_input("Trigger Word (e.g., !tts)", "!tts")
+
+# Status indicator placeholder
+status_placeholder = st.empty()
+
+# Audio player placeholder
+audio_placeholder = st.empty()
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -36,7 +48,7 @@ class Bot(commands.Bot):
         self._running = True
 
     async def event_ready(self):
-        st.success(f'Bot is running in channel: {twitch_channel}')
+        print(f'Bot is running in channel: {twitch_channel}')
 
     async def event_message(self, ctx):
         if not self._running or ctx.echo:
@@ -69,16 +81,13 @@ class Bot(commands.Bot):
             response = requests.post(url, json=data, headers=headers)
             
             if response.status_code == 200:
-                temp_file = "temp_audio.mp3"
-                with open(temp_file, "wb") as f:
-                    f.write(response.content)
-                st.audio(temp_file)
-                os.remove(temp_file)
+                # Put the audio data in the queue
+                st.session_state.audio_queue.put(response.content)
             else:
-                st.error("TTS API Error")
+                print("TTS API Error")
 
         except Exception as e:
-            st.error(f"Error generating speech: {str(e)}")
+            print(f"Error generating speech: {str(e)}")
 
     async def close(self):
         self._running = False
@@ -110,14 +119,11 @@ def run_bot():
         # Run the bot using the event loop
         loop.run_until_complete(bot.start())
     except Exception as e:
-        st.error(f"Bot error: {str(e)}")
+        print(f"Bot error: {str(e)}")
     finally:
         if hasattr(st.session_state, 'bot'):
             loop.run_until_complete(st.session_state.bot.close())
             loop.close()
-
-if 'bot_running' not in st.session_state:
-    st.session_state.bot_running = False
 
 def cleanup():
     if hasattr(st.session_state, 'bot') and st.session_state.bot is not None:
@@ -126,14 +132,39 @@ def cleanup():
         loop.run_until_complete(st.session_state.bot.close())
         loop.close()
 
+# Register the cleanup function
 atexit.register(cleanup)
 
-if __name__ == "__main__":
-    if st.button("Start Bot", disabled=st.session_state.bot_running):
-        st.session_state.bot_running = True
-        run_bot()
-    
-    if st.button("Stop Bot", disabled=not st.session_state.bot_running):
-        st.session_state.bot_running = False
-        cleanup()
-        st.experimental_rerun()
+# Bot control
+if 'bot_running' not in st.session_state:
+    st.session_state.bot_running = False
+
+if st.button("Start Bot", disabled=st.session_state.bot_running):
+    st.session_state.bot_running = True
+    # Start bot in a separate thread
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+    status_placeholder.success("Bot is running")
+
+if st.button("Stop Bot", disabled=not st.session_state.bot_running):
+    st.session_state.bot_running = False
+    cleanup()
+    status_placeholder.warning("Bot stopped")
+    st.experimental_rerun()
+
+# Audio player loop
+if st.session_state.bot_running:
+    try:
+        # Check for new audio in the queue
+        if not st.session_state.audio_queue.empty():
+            audio_data = st.session_state.audio_queue.get()
+            # Save temporary file
+            temp_file = "temp_audio.mp3"
+            with open(temp_file, "wb") as f:
+                f.write(audio_data)
+            # Play audio
+            audio_placeholder.audio(temp_file)
+            # Clean up
+            os.remove(temp_file)
+    except Exception as e:
+        print(f"Error playing audio: {str(e)}")
