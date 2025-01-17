@@ -1,6 +1,8 @@
 import os
 import requests
 import asyncio
+import threading
+import streamlit as st
 from twitchio.ext import commands
 from dotenv import load_dotenv
 
@@ -49,7 +51,18 @@ class Bot(commands.Bot):
         else:
             print(f"Error: {response.status_code} - {response.text}")
 
-# Main function to run the bot
-if __name__ == "__main__":
+def run_bot():
     bot = Bot()
-    asyncio.run(bot.start())
+    bot.run()
+
+# Streamlit UI
+st.title("Twitch Chat Reader")
+st.write("Listening for messages from StreamElements...")
+
+if st.button("Start Bot"):
+    # Start the bot in a separate thread
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.success("Bot has started!")
+
+st.write("Messages:")
+# Display messages if you want to maintain state (you can implement a way to display messages)
