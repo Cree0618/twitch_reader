@@ -12,7 +12,6 @@ load_dotenv()
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
 class Bot(commands.Bot):
-
     def __init__(self):
         super().__init__(token='c95ap3chzt6x3lnc0gc5r691hgegof', prefix='!', initial_channels=['sutsuno'])
         self.messages = []
@@ -24,11 +23,11 @@ class Bot(commands.Bot):
         # Ignore messages from the bot itself
         if message.author.name.lower() == self.nick.lower():
             return
-        
+
         # Check if the message is from StreamElements
         if message.author.name.lower() == 'streamelements':
             self.messages.append(message.content)
-            await self.text_to_speech(message.content)
+            asyncio.create_task(self.text_to_speech(message.content))  # Run TTS task asynchronously
 
     async def text_to_speech(self, text):
         url = "https://api.elevenlabs.io/v1/text-to-speech/generate"
@@ -52,17 +51,26 @@ class Bot(commands.Bot):
             print(f"Error: {response.status_code} - {response.text}")
 
 def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     bot = Bot()
-    bot.run()
+    loop.run_until_complete(bot.run())
 
 # Streamlit UI
 st.title("Twitch Chat Reader")
 st.write("Listening for messages from StreamElements...")
 
+if 'bot_thread' not in st.session_state:
+    st.session_state.bot_thread = None
+
 if st.button("Start Bot"):
-    # Start the bot in a separate thread
-    threading.Thread(target=run_bot, daemon=True).start()
-    st.success("Bot has started!")
+    if st.session_state.bot_thread is None or not st.session_state.bot_thread.is_alive():
+        # Start the bot in a separate thread
+        st.session_state.bot_thread = threading.Thread(target=run_bot, daemon=True)
+        st.session_state.bot_thread.start()
+        st.success("Bot has started!")
+    else:
+        st.warning("Bot is already running!")
 
 st.write("Messages:")
-# Display messages if you want to maintain state (you can implement a way to display messages)
+# Messages from the bot can be displayed using session state or Streamlit's experimental features
