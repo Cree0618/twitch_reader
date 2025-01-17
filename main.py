@@ -59,35 +59,38 @@ class Bot(commands.Bot):
             if tts_text:
                 self.executor.submit(self.generate_speech, tts_text)
 
-    def generate_speech(self, text):
-        try:
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-            
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": elevenlabs_api_key
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+
+def generate_speech(self, text):
+    add_script_run_ctx(threading.current_thread())  
+    try:
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": elevenlabs_api_key
+        }
+
+        data = {
+            "text": text,
+            "model_id": "eleven_monolingual_v1",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.5
             }
+        }
 
-            data = {
-                "text": text,
-                "model_id": "eleven_monolingual_v1",
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.5
-                }
-            }
+        response = requests.post(url, json=data, headers=headers)
+        
+        if response.status_code == 200:
+            st.session_state.audio_queue.put(response.content)
+        else:
+            print("TTS API Error")
 
-            response = requests.post(url, json=data, headers=headers)
-            
-            if response.status_code == 200:
-                # Put the audio data in the queue
-                st.session_state.audio_queue.put(response.content)
-            else:
-                print("TTS API Error")
+    except Exception as e:
+        print(f"Error generating speech: {str(e)}")
 
-        except Exception as e:
-            print(f"Error generating speech: {str(e)}")
 
     async def close(self):
         self._running = False
