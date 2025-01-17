@@ -26,9 +26,7 @@ class Bot(commands.Bot):
 
     async def event_message(self, message):
         # Ignore messages from the bot itself
-        if message.author.name.lower() == self.nick.lower():
-            return
-
+        # if message.author.name.lower() == self.nick.lower(): #     return
         # Check if the message is from the target user
         if message.author.name.lower() == 'gameplayer0618':
             message_queue.put(f"Received message: {message.content}")
